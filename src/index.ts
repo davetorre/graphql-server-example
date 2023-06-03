@@ -8,6 +8,7 @@ import express from 'express';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import { expressMiddleware } from '@apollo/server/express4';
+import { PubSub } from 'graphql-subscriptions';
 
 const typeDefs = `#graphql
   # Comment
@@ -25,6 +26,11 @@ const typeDefs = `#graphql
   type Mutation {
     addBook(title: String, author: String): Book
   }
+
+  type Subscription {
+    bookAdded: Book
+    hello: String
+  }
 `;
 
 interface NewBook {
@@ -41,6 +47,8 @@ const books: Book[] = [
   { id: '2', title: 'City of Glass', author: 'Paul Auster' }
 ];
 
+const pubsub = new PubSub();
+
 const resolvers = {
   Query: {
     books: () => books,
@@ -49,11 +57,26 @@ const resolvers = {
     }
   },
   Mutation: {
-    addBook: (_: any, book: NewBook) => {
-      books.push({ ...book, id: (books.length + 1).toString() })
+    addBook: (_: any, newBook: NewBook) => {
+      const book = { ...newBook, id: (books.length + 1).toString() }
+      books.push(book);
+      pubsub.publish('BOOK_ADDED', { bookAdded: book });
       return book;
     }
-  }
+  },
+  Subscription: {
+    bookAdded: {
+      subscribe: () => pubsub.asyncIterator(['BOOK_ADDED']),
+    },
+    hello: {
+      // Example using an async generator
+      subscribe: async function* () {
+        for await (const word of ['Hello', 'Bonjour', 'Ciao']) {
+          yield { hello: word };
+        }
+      },
+    },
+  },
 };
 
 const schema = makeExecutableSchema({ typeDefs, resolvers });
